@@ -7,6 +7,7 @@ import mass
 
 @njit
 def fasttrig_filter_trigger(data, filter_in, threshold):
+    assert threshold>0, "algorithm assumes we trigger with positiv threshold, change sign of filter_in to accomodate"
     filter_len = len(filter_in)
     inds = []
     jmax = len(data)-filter_len-1
@@ -23,6 +24,7 @@ def fasttrig_filter_trigger(data, filter_in, threshold):
     cache[:] = data[j:(j+filter_len)]
     c = np.dot(cache, filter)
     j=2
+    ready = False
     prog_step = jmax//100
     prog_ticks = 0
     while j <= jmax:
@@ -32,19 +34,26 @@ def fasttrig_filter_trigger(data, filter_in, threshold):
         a,b = b,c
         cache[:] = data[j:(j+filter_len)]
         c = np.dot(cache, filter)
-        if b>threshold and b>=c and b>a:
+        if b>threshold and b>=c and b>a and ready:
             inds.append(j)
+            ready = False
+        if b<0: # hold off on retriggering until we see opposite sign slope
+            ready=True
         j+=1
     return np.array(inds)
 
+
 @njit 
-def fast_apply_filter(data, filter):
+def fast_apply_filter(data, filter_in):
+    cache = np.zeros(len(filter_in))
+    filter = np.zeros(len(filter_in))
     filter_len = len(filter)
     filter_out = np.zeros(len(data)-len(filter))
     j = 0
     jmax = len(data)-filter_len-1
     while j <= jmax:
-        filter_out[j] = np.dot(data[j:(j+filter_len)], filter)
+        cache[:] = data[j:(j+filter_len)]
+        filter_out[j] = np.dot(cache, filter)
     return filter_out
 
 def get_noise_trigger_inds(pulse_trigger_inds, n_dead_samples_after_previous_pulse, 

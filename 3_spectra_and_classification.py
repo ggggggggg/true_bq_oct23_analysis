@@ -9,15 +9,15 @@ plt.close("all")
 
 # inputs
 # pulse selection quantities for average pulse
-min_time_since_last_s = 0.4
-min_time_to_next_s = 0.1
+min_time_since_last_s = 0.3
+min_time_to_next_s = 0.005
 # pulse lengths
 nsamples = 1000
 npre = 500
 pretrigger_ignore_samples = 10 # this value to exclude rising samples from pretrigger period
 polarity = -1
-spikeyness_threshold_foil_plus_non_foil = 0.06
-spikeyness_threshold_non_foil_only = 1
+spikeyness_threshold_foil_plus_non_foil = 45
+spikeyness_threshold_non_foil_only = 100
 spikeness_last_val_offset = 100
 filter_orthogonal_to_exponential_time_constant_ms = 2.0
 
@@ -51,13 +51,14 @@ for i in range(len(trig_inds)):
     pretrig_mean[i] = np.mean(pulse[npre//2])
     lastval = np.abs(pulse[npre+spikeness_last_val_offset]-pretrig_mean[i])
     peakval = np.amax(pulse)-pretrig_mean[i]
-    spikeyness[i] = (peakval-lastval)/lastval
+    spikeyness[i] = (peakval-lastval)
     pulse_rms[i] = np.sqrt(np.sum((pulse[npre:]-pretrig_mean[i])**2))
 
-plt.hist(spikeyness, np.arange(0,1,0.001))
+plt.hist(spikeyness, np.linspace(0,200,100))
 plt.xlabel("spikeyness")
 plt.ylabel("number of occurences")
-plt.axvline(spikeyness_threshold_foil_plus_non_foil, label="spikeness_threshold",color="r")
+plt.axvline(spikeyness_threshold_non_foil_only, label="spikeyness_threshold_non_foil_only",color="r")
+plt.axvline(spikeyness_threshold_foil_plus_non_foil, label="spikeness_threshold_foil_plus_non_foil",color="r")
 plt.legend()
 
 npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness>spikeyness_threshold_foil_plus_non_foil)&(isolated_bool)],f"spikeyness>{spikeyness_threshold_foil_plus_non_foil:.2f}")
@@ -85,20 +86,20 @@ plt.plot(noise_pulses[:,:200])
 plt.title("200 noise pulses")
 
 
-def autocorrelation_broken_from_pulses(noise_pulses):
-    """noise_pulses[:,0] is the first pulse"""
-    nsamples, npulses = noise_pulses.shape
-    records_used = samples_used = 0
-    ac = np.zeros(nsamples, dtype=float)
+# def autocorrelation_broken_from_pulses(noise_pulses):
+#     """noise_pulses[:,0] is the first pulse"""
+#     nsamples, npulses = noise_pulses.shape
+#     records_used = samples_used = 0
+#     ac = np.zeros(nsamples, dtype=float)
 
-    for i in range(npulses):
-        pulse = noise_pulses[:,i]
-        pulse -= pulse.mean()
-        ac += np.correlate(pulse, pulse, 'full')[nsamples-1:]
+#     for i in range(npulses):
+#         pulse = noise_pulses[:,i]
+#         pulse -= pulse.mean()
+#         ac += np.correlate(pulse, pulse, 'full')[nsamples-1:]
 
-    ac /= npulses
-    ac /= nsamples - np.arange(nsamples, dtype=float)
-    return ac
+#     ac /= npulses
+#     ac /= nsamples - np.arange(nsamples, dtype=float)
+#     return ac
 
 
 spectrum=npyfilter.spectrum_from_pulse(noise_pulses, frametime_s)
@@ -141,16 +142,16 @@ max_residual_rms = mad_threshold(residual_rms)
 classification_meaning = {0: "foil clean",
                           1: "foil + non_foil",
                           2: "non_foil_only",
-                          3: "too soon after last",
-                          4: "next too soon",
-                          5: "last and next toon close",
+                          3: "last too close",
+                          4: "next too close",
+                          5: "last and next too close",
                           6: "high residual_rms"}
 classification = np.zeros(len(trig_inds), dtype=int)
-classification[(time_since_last_s<min_time_since_last_s)]==3
-classification[(time_to_next_s<min_time_to_next_s)]==4
-classification[(time_since_last_s<min_time_since_last_s)&(time_to_next_s<min_time_to_next_s)]=5
-classification[(classification==0)&(spikeyness>spikeyness_threshold_foil_plus_non_foil)]=1
 classification[(classification==0)&(spikeyness>spikeyness_threshold_non_foil_only)]=2
+classification[(classification==0)&(time_since_last_s<min_time_since_last_s)&(time_to_next_s<min_time_to_next_s)]=5
+classification[(classification==0)&(time_since_last_s<min_time_since_last_s)]=3
+classification[(classification==0)&(time_to_next_s<min_time_to_next_s)]=4
+classification[(classification==0)&(spikeyness>spikeyness_threshold_foil_plus_non_foil)]=1
 classification[(classification==0)&(residual_rms>max_residual_rms)]=1
 
 # plot representatives of pulse classifications

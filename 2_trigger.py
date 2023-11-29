@@ -3,6 +3,7 @@ import numpy as np
 import pylab as plt
 import pickle
 import npyfilter
+import scipy
 plt.ion()
 plt.close("all")
 
@@ -11,11 +12,12 @@ fname_npy = f"{fname_ljh}.npy"
 fname_header = f"{fname_npy}.header"
 polarity = -1 # postive for positive oging pulses, negative for negative going
 trigger_filter = np.array([-1]*10+[+1]*10,dtype=float) * polarity # negate for negative pulses
-trigger_threshold = 50
+trigger_threshold = 200
+
 noise_n_dead_samples_after_previous_pulse = 70000
 noise_n_samples = 1000
 noise_long_n_samples = 100000
-truncate_data_to_time_s = 1e3
+truncate_data_to_time_s = 1e4
 
 fname_trig_inds = f"{fname_npy}.trig_inds.npz"
 
@@ -26,10 +28,10 @@ trunacate_to_frame = int(truncate_data_to_time_s/frametime_s)
 data_raw = np.load(fname_npy, mmap_mode="r").reshape(-1)
 #truncate for faster analysis
 data = data_raw[:min(len(data_raw), trunacate_to_frame)]
+data_mode = scipy.stats.mode(data[:1000000:100]).mode
 
-
-
-trig_inds = npyfilter.fasttrig_filter_trigger(data, trigger_filter[:], trigger_threshold)
+trig_inds = npyfilter.fasttrig_filter_trigger(data, trigger_filter[:], 
+                                                           trigger_threshold)
 noise_inds = npyfilter.get_noise_trigger_inds(trig_inds, n_dead_samples_after_previous_pulse=noise_n_dead_samples_after_previous_pulse, 
                            n_record_samples=noise_n_samples, max_noise_triggers=10000)
 noise_long_inds = npyfilter.get_noise_trigger_inds(trig_inds, n_dead_samples_after_previous_pulse=noise_n_dead_samples_after_previous_pulse, 
@@ -48,15 +50,19 @@ plt.ylabel("value at start of noise record (like pt mean)")
 skip = 10
 N = 100000
 lo = N*10
+lo = 600194959-N//2
 hi = lo+N*skip
 trig_inds_plot = trig_inds[(trig_inds>lo) & (trig_inds < hi)]
 noise_inds_plot = noise_inds[(noise_inds>lo) & (noise_inds < hi)]
 noise_long_inds_plot = noise_long_inds[(noise_long_inds>lo) & (noise_long_inds < hi)]
+# filter_out = npyfilter.fast_apply_filter(data[lo:hi], trigger_filter)
+# filter_Nhalf = len(trigger_filter)//2
 plt.figure()
 plt.plot(np.arange(lo, hi, skip)*frametime_s/3600, data[lo:hi:skip])
 plt.plot(trig_inds_plot*frametime_s/3600, data[trig_inds_plot],"ro",label="trig_inds")
 plt.plot(noise_inds_plot*frametime_s/3600, data[noise_inds_plot],"bx",label="noise_inds")
 plt.plot(noise_long_inds_plot*frametime_s/3600, data[noise_long_inds_plot],"cv",label="noise_long_inds")
+# plt.plot(np.arange(lo+filter_Nhalf, hi-filter_Nhalf, skip)*frametime_s/3600, filter_out[::skip], label="filter")
 plt.xlabel("time (hour)")
 plt.legend()
 plt.ylabel("signal (arbs)")
