@@ -16,9 +16,10 @@ nsamples = 1000
 npre = 500
 pretrigger_ignore_samples = 10 # this value to exclude rising samples from pretrigger period
 polarity = -1
-spikeyness_threshold_foil_plus_non_foil = 45
-spikeyness_threshold_non_foil_only = 100
-spikeness_last_val_offset = 100
+residual_rms_n_sigma=7
+spikeyness_threshold_foil_plus_non_foil = 7.7e-4
+spikeyness_threshold_non_foil_only = 17e-3
+frontload_n_samples = 150
 filter_orthogonal_to_exponential_time_constant_ms = 2.0
 
 fname_ljh = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh")
@@ -49,20 +50,22 @@ for i in range(len(trig_inds)):
     j = trig_inds[i]
     pulse = data[j-npre:j+nsamples-npre]*polarity
     pretrig_mean[i] = np.mean(pulse[npre//2])
-    lastval = np.abs(pulse[npre+spikeness_last_val_offset]-pretrig_mean[i])
     peakval = np.amax(pulse)-pretrig_mean[i]
-    spikeyness[i] = (peakval-lastval)
     pulse_rms[i] = np.sqrt(np.sum((pulse[npre:]-pretrig_mean[i])**2))
+    max_deriv = np.amax(np.diff(pulse))
+    max_neg_deriv = -np.amin(np.diff(pulse[::10]))/10
+    pulse_area = np.sum(pulse[npre:]-pretrig_mean[i])
+    spikeyness[i] = max_neg_deriv/peakval
+    frontload_pulse_area = np.sum(pulse[npre:npre+frontload_n_samples]-pretrig_mean[i])
+    spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
 
-plt.hist(spikeyness, np.linspace(0,200,100))
+plt.hist(spikeyness[isolated_bool], np.linspace(0,20*np.median(spikeyness),100))
 plt.xlabel("spikeyness")
 plt.ylabel("number of occurences")
 plt.axvline(spikeyness_threshold_non_foil_only, label="spikeyness_threshold_non_foil_only",color="r")
-plt.axvline(spikeyness_threshold_foil_plus_non_foil, label="spikeness_threshold_foil_plus_non_foil",color="r")
+plt.axvline(spikeyness_threshold_foil_plus_non_foil, label="spikeness_threshold_foil_plus_non_foil",color="k")
 plt.legend()
-
-npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness>spikeyness_threshold_foil_plus_non_foil)&(isolated_bool)],f"spikeyness>{spikeyness_threshold_foil_plus_non_foil:.2f}")
-npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness<0.03)],f"spikeyness<0.03")
+plt.yscale("log")
 
 def gather_pulse_from_inds(data, npre, nsamples, inds):
     pulses = np.zeros((nsamples, len(inds)))
@@ -122,6 +125,7 @@ template = template/np.sqrt(np.dot(template, template))
 for i in range(len(trig_inds)):
     j = trig_inds[i]
     pulse = data[j-npre:j+nsamples-npre]*polarity
+    pulse = pulse - pulse.mean()
     filt_value[i] = np.dot(chosen_filter, pulse)
     filt_value_template[i] = np.dot(template, pulse)
     residual = pulse-template*filt_value_template[i]
@@ -137,7 +141,7 @@ def mad_threshold(x, n_sigma=5):
     sigma = mad*1.4826
     return med+5*sigma
 
-max_residual_rms = mad_threshold(residual_rms)
+max_residual_rms = mad_threshold(residual_rms, n_sigma=residual_rms_n_sigma)
 
 classification_meaning = {0: "foil clean",
                           1: "foil + non_foil",
@@ -147,12 +151,12 @@ classification_meaning = {0: "foil clean",
                           5: "last and next too close",
                           6: "high residual_rms"}
 classification = np.zeros(len(trig_inds), dtype=int)
-classification[(classification==0)&(spikeyness>spikeyness_threshold_non_foil_only)]=2
 classification[(classification==0)&(time_since_last_s<min_time_since_last_s)&(time_to_next_s<min_time_to_next_s)]=5
 classification[(classification==0)&(time_since_last_s<min_time_since_last_s)]=3
+classification[(classification==0)&(spikeyness>spikeyness_threshold_non_foil_only)]=2
 classification[(classification==0)&(time_to_next_s<min_time_to_next_s)]=4
 classification[(classification==0)&(spikeyness>spikeyness_threshold_foil_plus_non_foil)]=1
-classification[(classification==0)&(residual_rms>max_residual_rms)]=1
+classification[(classification==0)&(residual_rms>max_residual_rms)]=6
 
 # plot representatives of pulse classifications
 for c in range(len(classification_meaning)):
