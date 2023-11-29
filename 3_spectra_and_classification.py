@@ -16,8 +16,10 @@ nsamples = 1000
 npre = 500
 pretrigger_ignore_samples = 10 # this value to exclude rising samples from pretrigger period
 polarity = -1
-spikeyness_threshold = 0.06
+spikeyness_threshold_foil_plus_non_foil = 0.06
+spikeyness_threshold_non_foil_only = 1
 spikeness_last_val_offset = 100
+filter_orthogonal_to_exponential_time_constant_ms = 2.0
 
 fname_ljh = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh")
 fname_npy = f"{fname_ljh}.npy"
@@ -55,10 +57,10 @@ for i in range(len(trig_inds)):
 plt.hist(spikeyness, np.arange(0,1,0.001))
 plt.xlabel("spikeyness")
 plt.ylabel("number of occurences")
-plt.axvline(spikeyness_threshold, label="spikeness_threshold",color="r")
+plt.axvline(spikeyness_threshold_foil_plus_non_foil, label="spikeness_threshold",color="r")
 plt.legend()
 
-npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness>spikeyness_threshold)&(isolated_bool)],f"spikeyness>{spikeyness_threshold:.2f}")
+npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness>spikeyness_threshold_foil_plus_non_foil)&(isolated_bool)],f"spikeyness>{spikeyness_threshold_foil_plus_non_foil:.2f}")
 npyfilter.plot_inds(data, npre, nsamples, trig_inds[(spikeyness<0.03)],f"spikeyness<0.03")
 
 def gather_pulse_from_inds(data, npre, nsamples, inds):
@@ -67,7 +69,7 @@ def gather_pulse_from_inds(data, npre, nsamples, inds):
         pulses[:,i] = data[ind-npre:ind+nsamples-npre]
     return pulses
 
-clean_inds = trig_inds[(spikeyness<spikeyness_threshold)&(isolated_bool)]
+clean_inds = trig_inds[(spikeyness<spikeyness_threshold_foil_plus_non_foil)&(isolated_bool)]
 
 npyfilter.plot_inds(data, npre, nsamples, clean_inds,f"clean_inds")
 clean_pulses = gather_pulse_from_inds(data, npre, nsamples, clean_inds)
@@ -83,10 +85,78 @@ plt.plot(noise_pulses[:,:200])
 plt.title("200 noise pulses")
 
 
+def autocorrelation_broken_from_pulses(noise_pulses):
+    """noise_pulses[:,0] is the first pulse"""
+    nsamples, npulses = noise_pulses.shape
+    records_used = samples_used = 0
+    ac = np.zeros(nsamples, dtype=float)
+
+    for i in range(npulses):
+        pulse = noise_pulses[:,i]
+        pulse -= pulse.mean()
+        ac += np.correlate(pulse, pulse, 'full')[nsamples-1:]
+
+    ac /= npulses
+    ac /= nsamples - np.arange(nsamples, dtype=float)
+    return ac
+
+
 spectrum=npyfilter.spectrum_from_pulse(noise_pulses, frametime_s)
-f = spectrum.frequencies()
 psd = spectrum.spectrum()
-filter = mass.Filter(avg_clean_pulse, npre,
-                                 self.noise_psd[...],
-                                 self.noise_autocorr, sample_time=self.timebase,
-                                 shorten=shorten)
+spectrum.plot()
+noise_autocorr = mass.mathstat.power_spectrum.autocorrelation_broken_from_pulses(noise_pulses)
+filter_obj = mass.ExperimentalFilter(avg_clean_pulse, npre-pretrigger_ignore_samples,
+                                 psd, sample_time=frametime_s, 
+                                 noise_autocorr=noise_autocorr,
+                                 tau=filter_orthogonal_to_exponential_time_constant_ms)
+filter_obj.compute()
+filter_obj.report()
+chosen_filter = filter_obj.filt_noexpcon
+
+filt_value = np.zeros(len(trig_inds))
+residual_rms = np.zeros(len(trig_inds))
+filt_value_template = np.zeros(len(trig_inds))
+template = avg_clean_pulse-np.mean(avg_clean_pulse)
+template = template/np.sqrt(np.dot(template, template))
+for i in range(len(trig_inds)):
+    j = trig_inds[i]
+    pulse = data[j-npre:j+nsamples-npre]*polarity
+    filt_value[i] = np.dot(chosen_filter, pulse)
+    filt_value_template[i] = np.dot(template, pulse)
+    residual = pulse-template*filt_value_template[i]
+    residual_std_dev = np.std(residual)
+    residual_rms[i] = residual_std_dev  
+
+def median_absolute_deviation(x):
+    med = np.median(x)
+    return np.median(np.abs(x-med))
+def mad_threshold(x, n_sigma=5):
+    med = np.median(x)
+    mad = median_absolute_deviation(x)
+    sigma = mad*1.4826
+    return med+5*sigma
+
+max_residual_rms = mad_threshold(residual_rms)
+
+classification_meaning = {0: "foil clean",
+                          1: "foil + non_foil",
+                          2: "non_foil_only",
+                          3: "too soon after last",
+                          4: "next too soon",
+                          5: "last and next toon close",
+                          6: "high residual_rms"}
+classification = np.zeros(len(trig_inds), dtype=int)
+classification[(time_since_last_s<min_time_since_last_s)]==3
+classification[(time_to_next_s<min_time_to_next_s)]==4
+classification[(time_since_last_s<min_time_since_last_s)&(time_to_next_s<min_time_to_next_s)]=5
+classification[(classification==0)&(spikeyness>spikeyness_threshold_foil_plus_non_foil)]=1
+classification[(classification==0)&(spikeyness>spikeyness_threshold_non_foil_only)]=2
+classification[(classification==0)&(residual_rms>max_residual_rms)]=1
+
+# plot representatives of pulse classifications
+for c in range(len(classification_meaning)):
+    inds = np.nonzero(classification==c)[0]
+    c_meaning = classification_meaning[c]
+    print(f"{c=} {c_meaning} {len(inds)=}")
+    npyfilter.plot_inds(data, npre, nsamples, trig_inds[inds], label=f"{c=} {c_meaning}", max_pulses_to_plot=50)
+    

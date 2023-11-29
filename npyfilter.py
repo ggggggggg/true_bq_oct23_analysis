@@ -3,6 +3,7 @@ import numba.typed
 import numpy as np
 import scipy
 import pylab as plt
+import mass
 
 @njit
 def fasttrig_filter_trigger(data, filter_in, threshold):
@@ -79,7 +80,8 @@ def plot_inds(data, npre, nsamples, inds, label, max_pulses_to_plot=40):
         plt.plot(trace, "--", color=color, label=f"{i}", picker=True, pickradius=5)
         # if plot_modeled:
         #     plt.plot(dsoff.offFile.modeledPulse(i), color=color)       
-    plt.legend()
+    if len(inds)>0:
+        plt.legend()
     plt.title(f"{label}")
     plt.xlabel("sample number")
     plt.ylabel("signal (arb)")
@@ -87,9 +89,9 @@ def plot_inds(data, npre, nsamples, inds, label, max_pulses_to_plot=40):
 
 def spectrum_from_pulse(noise_pulses, frametime_s):
     """noise_pulses[:,0] is the first pulse"""
-    nsamples = noise_pulses.shape[0]
+    nsamples, npulses = noise_pulses.shape
     spectrum = mass.mathstat.power_spectrum.PowerSpectrum(nsamples // 2, dt=frametime_s)
     window = np.ones(nsamples)
-    for i in range(noise_pulses.shape[1]):
+    for i in range(npulses):
         spectrum.addDataSegment(noise_pulses[:,i], window=window)
     return spectrum
