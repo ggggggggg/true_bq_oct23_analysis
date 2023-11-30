@@ -4,12 +4,13 @@ import pylab as plt
 import pickle
 import npyfilter
 import mass
+import scipy
 plt.ion()
 plt.close("all")
 
 # inputs
 # pulse selection quantities for average pulse
-min_time_since_last_s = 0.3
+min_time_since_last_s = 0.2
 min_time_to_next_s = 0.005
 # pulse lengths
 nsamples = 1000
@@ -20,12 +21,14 @@ residual_rms_n_sigma=7
 spikeyness_threshold_foil_plus_non_foil = 7.7e-4
 spikeyness_threshold_non_foil_only = 17e-3
 frontload_n_samples = 150
-filter_orthogonal_to_exponential_time_constant_ms = 2.0
+filter_orthogonal_to_exponential_time_constant_ms = 20
+am241_Q_eV = 5637.82e3
 
 fname_ljh = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh")
 fname_npy = f"{fname_ljh}.npy"
 fname_header = f"{fname_npy}.header"
 fname_trig_inds = f"{fname_npy}.trig_inds.npz"
+fname_energy = f"{fname_npy}.energy.npy"
 with open(fname_header,"rb") as f:
     header = pickle.load(f)
     frametime_s = header["timebase_s"]
@@ -165,3 +168,45 @@ for c in range(len(classification_meaning)):
     print(f"{c=} {c_meaning} {len(inds)=}")
     npyfilter.plot_inds(data, npre, nsamples, trig_inds[inds], label=f"{c=} {c_meaning}", max_pulses_to_plot=50)
     
+# energy analysis
+fv_subset = filt_value[classification==0]
+pretrig_mean_subset = pretrig_mean[classification==0]
+
+plt.figure()
+plt.plot(pretrig_mean_subset, fv_subset,".")
+plt.xlabel("pretrig_mean")
+plt.ylabel("filt_value")
+
+
+energy = filt_value*am241_Q_eV/np.median(fv_subset)
+
+plt.figure()
+plt.hist(energy, np.arange(0,6e6,1000))
+plt.title(f"{filter_orthogonal_to_exponential_time_constant_ms=}")
+plt.xlabel("energy (eV)")
+plt.ylabel("occurences")
+
+clean_long_pulse_inds = trig_inds[(classification==0)&(time_to_next_s>0.4)]
+clean_long_pulses = gather_pulse_from_inds(data, npre, nsamples+30000, clean_long_pulse_inds[:200])
+avg_clean_long_pulse = np.mean(clean_long_pulses, axis=1)
+avg_clean_long_pulse -= np.mean(avg_clean_long_pulse[:npre-pretrigger_ignore_samples])
+avg_clean_long_pulse*=polarity
+clean_long_pulse_t_s = (np.arange(len(avg_clean_long_pulse))-2*npre)*frametime_s
+
+plt.figure()
+plt.plot(clean_long_pulse_t_s,avg_clean_long_pulse)
+plt.xlabel("time (s)")
+plt.ylabel("signal (arb)")
+plt.title("avg clean long pulse")
+import lmfit
+model = lmfit.models.ExponentialModel()
+params = model.guess(avg_clean_long_pulse[npre*2:], x=clean_long_pulse_t_s[npre*2:])
+result = model.fit(avg_clean_long_pulse[npre*2:], x=clean_long_pulse_t_s[npre*2:], params=params)
+print(result.fit_report())
+
+for k,v in classification_meaning.items():
+    if k == 0:
+        continue
+    energy[classification==k]=-k
+energy[classification==1]=5.6e6
+np.save(fname_energy, energy)
