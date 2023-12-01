@@ -9,7 +9,7 @@ plt.ion()
 plt.close("all")
 
 # inputs
-min_time_since_last_s = 0.2
+min_time_since_last_s = 0.15
 
 fname_ljh = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh")
 fname_npy = f"{fname_ljh}.npy"
@@ -33,8 +33,8 @@ time_since_last_s = np.diff(trig_inds*frametime_s, prepend=trig_inds[0])
 time_to_next_s = np.diff(trig_inds*frametime_s, append=trig_inds[-1])
 
 bin_edges = np.arange(0,6e6,2000)
-roi_lo = 5537000
-roi_hi = 5665000
+roi_lo = 5.4e6
+roi_hi = 6.0e6
 inds_roi = np.nonzero((energy>roi_lo) & (energy<roi_hi))[0]
 total_counts_roi = len(inds_roi)
 live_time_s = np.sum(time_since_last_s[energy>0]-min_time_since_last_s)

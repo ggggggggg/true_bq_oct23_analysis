@@ -10,18 +10,18 @@ plt.close("all")
 
 # inputs
 # pulse selection quantities for average pulse
-min_time_since_last_s = 0.2
+min_time_since_last_s = 0.15
 min_time_to_next_s = 0.005
 # pulse lengths
 nsamples = 1000
 npre = 500
 pretrigger_ignore_samples = 10 # this value to exclude rising samples from pretrigger period
 polarity = -1
-residual_rms_n_sigma=7
+residual_rms_n_sigma=15
 spikeyness_threshold_foil_plus_non_foil = 7.7e-4
 spikeyness_threshold_non_foil_only = 17e-3
 frontload_n_samples = 150
-filter_orthogonal_to_exponential_time_constant_ms = 20
+filter_orthogonal_to_exponential_time_constant_ms = 25
 am241_Q_eV = 5637.82e3
 
 fname_ljh = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh")
@@ -29,6 +29,7 @@ fname_npy = f"{fname_ljh}.npy"
 fname_header = f"{fname_npy}.header"
 fname_trig_inds = f"{fname_npy}.trig_inds.npz"
 fname_energy = f"{fname_npy}.energy.npy"
+fname_classification = f"{fname_npy}.classification.npy"
 with open(fname_header,"rb") as f:
     header = pickle.load(f)
     frametime_s = header["timebase_s"]
@@ -171,20 +172,32 @@ for c in range(len(classification_meaning)):
 # energy analysis
 fv_subset = filt_value[classification==0]
 pretrig_mean_subset = pretrig_mean[classification==0]
+energy_uncorrected = filt_value*am241_Q_eV/np.median(fv_subset)
 
+slope, info = mass.core.analysis_algorithms.drift_correct(
+    pretrig_mean_subset, fv_subset)
+median_pt_mean = info['median_pretrig_mean']
+fv_corrected = filt_value * (1+(pretrig_mean-median_pt_mean)*slope)
+energy_corrected = fv_corrected*am241_Q_eV/np.median(fv_corrected[classification==0])
+energy=energy_corrected
 plt.figure()
-plt.plot(pretrig_mean_subset, fv_subset,".")
+plt.plot(pretrig_mean_subset, energy_uncorrected[classification==0],".", label="uncorrected")
+plt.plot(pretrig_mean_subset, energy_corrected[classification==0],".", label="corrected")
 plt.xlabel("pretrig_mean")
 plt.ylabel("filt_value")
+plt.legend()
 
 
-energy = filt_value*am241_Q_eV/np.median(fv_subset)
 
 plt.figure()
-plt.hist(energy, np.arange(0,6e6,1000))
+plt.hist(energy_uncorrected[classification==0], np.arange(5.5e6,6e6,1000), label="uncorrected")
+plt.hist(energy[classification==0], np.arange(5.5e6,6e6,1000), label="corrected")
 plt.title(f"{filter_orthogonal_to_exponential_time_constant_ms=}")
 plt.xlabel("energy (eV)")
 plt.ylabel("occurences")
+plt.yscale("log")
+plt.legend()
+plt.tight_layout()
 
 clean_long_pulse_inds = trig_inds[(classification==0)&(time_to_next_s>0.4)]
 clean_long_pulses = gather_pulse_from_inds(data, npre, nsamples+30000, clean_long_pulse_inds[:200])
@@ -200,13 +213,16 @@ plt.ylabel("signal (arb)")
 plt.title("avg clean long pulse")
 import lmfit
 model = lmfit.models.ExponentialModel()
-params = model.guess(avg_clean_long_pulse[npre*2:], x=clean_long_pulse_t_s[npre*2:])
-result = model.fit(avg_clean_long_pulse[npre*2:], x=clean_long_pulse_t_s[npre*2:], params=params)
+params = model.guess(avg_clean_long_pulse[npre*40:], x=clean_long_pulse_t_s[npre*40:])
+result = model.fit(avg_clean_long_pulse[npre*40:], x=clean_long_pulse_t_s[npre*40:], params=params)
 print(result.fit_report())
 
+
+
 for k,v in classification_meaning.items():
-    if k == 0:
+    if k == 0 or k == 6:
         continue
     energy[classification==k]=-k
 energy[classification==1]=5.6e6
 np.save(fname_energy, energy)
+np.save(fname_classification, classification)

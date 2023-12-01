@@ -17,7 +17,7 @@ trigger_threshold = 200
 noise_n_dead_samples_after_previous_pulse = 70000
 noise_n_samples = 1000
 noise_long_n_samples = 100000
-truncate_data_to_time_s = 1e4
+truncate_data_to_time_s = 1e7
 
 fname_trig_inds = f"{fname_npy}.trig_inds.npz"
 
