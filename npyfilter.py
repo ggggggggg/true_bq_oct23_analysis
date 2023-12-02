@@ -5,6 +5,47 @@ import scipy
 import pylab as plt
 import mass
 
+def calculate_spikeyness_pretrig_mean_pulse_rms(data, frontload_n_samples, npre, nsamples, polarity, trig_inds):
+        spikeyness = np.zeros(len(trig_inds))
+        pretrig_mean = np.zeros(len(trig_inds))
+        pulse_rms = np.zeros(len(trig_inds))
+        for i, trig_ind in enumerate(trig_inds):
+            pulse = data[trig_ind-npre:trig_ind+nsamples-npre]*polarity
+            pretrig_mean[i] = np.mean(pulse[:npre//2])
+            peakval = np.amax(pulse)-pretrig_mean[i]
+            pulse_rms[i] = np.sqrt(np.sum((pulse[npre:]-pretrig_mean[i])**2))
+            # max_deriv = np.amax(np.diff(pulse))
+            max_neg_deriv = -np.amin(np.diff(pulse[::10]))/10
+            pulse_area = np.sum(pulse[npre:]-pretrig_mean[i])
+            spikeyness[i] = max_neg_deriv/peakval
+            frontload_pulse_area = np.sum(pulse[npre:npre+frontload_n_samples]-pretrig_mean[i])
+            spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
+            pretrig_mean[i] *= polarity
+        return spikeyness, pretrig_mean, pulse_rms
+
+def filter_and_residual_rms(data, chosen_filter, avg_pulse, trig_inds, npre, nsamples, polarity):
+    filt_value = np.zeros(len(trig_inds))
+    residual_rms = np.zeros(len(trig_inds))
+    filt_value_template = np.zeros(len(trig_inds))
+    template = avg_pulse-np.mean(avg_pulse)
+    template = template/np.sqrt(np.dot(template, template))
+    for i in range(len(trig_inds)):
+        j = trig_inds[i]
+        pulse = data[j-npre:j+nsamples-npre]*polarity
+        pulse = pulse - pulse.mean()
+        filt_value[i] = np.dot(chosen_filter, pulse)
+        filt_value_template[i] = np.dot(template, pulse)
+        residual = pulse-template*filt_value_template[i]
+        residual_std_dev = np.std(residual)
+        residual_rms[i] = residual_std_dev  
+    return filt_value, residual_rms, filt_value_template
+
+def gather_pulse_from_inds(data, npre, nsamples, inds):
+    pulses = np.zeros((nsamples, len(inds)))
+    for i, ind in enumerate(inds):
+        pulses[:,i] = data[ind-npre:ind+nsamples-npre]
+    return pulses
+
 @njit
 def fasttrig_filter_trigger(data, filter_in, threshold):
     assert threshold>0, "algorithm assumes we trigger with positiv threshold, change sign of filter_in to accomodate"
@@ -104,3 +145,12 @@ def spectrum_from_pulse(noise_pulses, frametime_s):
     for i in range(npulses):
         spectrum.addDataSegment(noise_pulses[:,i], window=window)
     return spectrum
+
+def median_absolute_deviation(x):
+    med = np.median(x)
+    return np.median(np.abs(x-med))
+def mad_threshold(x, n_sigma=5):
+    med = np.median(x)
+    mad = median_absolute_deviation(x)
+    sigma = mad*1.4826
+    return med+5*sigma

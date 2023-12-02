@@ -2,6 +2,7 @@
 20231003
 *.ljh
 *.npy.*
+_cache
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
