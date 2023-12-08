@@ -19,7 +19,9 @@ def calculate_spikeyness_pretrig_mean_pulse_rms(data, frontload_n_samples, npre,
             pulse_area = np.sum(pulse[npre:]-pretrig_mean[i])
             spikeyness[i] = max_neg_deriv/peakval
             frontload_pulse_area = np.sum(pulse[npre:npre+frontload_n_samples]-pretrig_mean[i])
-            spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
+            backload_pulse_area = np.sum(pulse[npre+frontload_n_samples:]-pretrig_mean[i])
+            # spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
+            spikeyness[i] = frontload_pulse_area/backload_pulse_area
             pretrig_mean[i] *= polarity
         return spikeyness, pretrig_mean, pulse_rms
 

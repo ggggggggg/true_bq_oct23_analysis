@@ -8,7 +8,7 @@ import memoize_to_disk_npy
 import polars as pl
 import hashlib
 import mass
-
+am241_Q_eV = 5637.82e3
 class NpyNoise():
     def __init__(self, title, data, noise_trig_inds, frametime_s, nsamples):
         self.title = title
@@ -18,13 +18,14 @@ class NpyNoise():
         self.nsamples = nsamples
         self.spectrum = self._calc()
 
-    def plot(self):
-        return self.spectrum.plot()
-
+    def plot(self, title):
+        ret = self.spectrum.plot()
+        plt.title(title)
+        return ret
+    
     def _calc(self):
         pulses = npyfilter.gather_pulse_from_inds(self.data, 0, self.nsamples, self.noise_trig_inds)
         spectrum=npyfilter.spectrum_from_pulse(pulses, self.frametime_s)
-        spectrum.plot()
         return spectrum
     
     def autocorr(self):
@@ -67,6 +68,7 @@ class NpyAnalyzer():
         self.nsamples = nsamples
 
     def _trigger_pulses_or_load_from_cache(self, trigger_filter, trigger_threshold, truncate_data_to_time_s):
+        # key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s, self.fname_npy))).encode()).hexdigest()}.npy"
         key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s))).encode()).hexdigest()}.npy"
         fname = memoize_to_disk_npy.get_fname(key)
         try:
@@ -92,10 +94,10 @@ class NpyAnalyzer():
                                        time_since_last_s=time_since_last_s, 
                                        time_to_next_s=time_to_next_s)
 
-    def calculate_noise_triggers(self, noise_n_samples, n_dead_samples_after_previous_pulse, max_triggers=10000):
+    def calculate_noise_triggers(self, noise_n_samples, n_dead_samples_after_previous_pulse, max_triggers=1000):
         trig_ind = self.df["trig_ind"]
         noise_trig_ind = npyfilter.get_noise_trigger_inds(trig_ind, n_dead_samples_after_previous_pulse, 
-                           n_record_samples=noise_n_samples, max_noise_triggers=10000)
+                           n_record_samples=noise_n_samples, max_noise_triggers=1000)
         return NpyNoise(self.fname_npy, self.data, noise_trig_ind, self.frametime_s, noise_n_samples)
     
     def calculate_spikeyness_pretrig_mean_pulse_rms(self, frontload_n_samples):
@@ -133,14 +135,17 @@ class NpyAnalyzer():
         self.average_pulse_obj = NpyAveragePulse("average pulse", trig_inds, self.data, self.npre, self.nsamples)
         return self.average_pulse_obj
     
-    def calculate_filter(self, avg_pulse_values, noise_autocorr, noise_psd, 
+    def calculate_filter(self, avg_pulse_values, noise_autocorr, noise_psd,
+                         filter_pretrigger_ignore_samples, 
                          filter_orthogonal_to_exponential_time_constant_ms):
-        filter_obj = mass.ExperimentalFilter(avg_pulse_values, self.npre-self.pretrigger_ignore_samples,
+        filter_obj = mass.ExperimentalFilter(avg_pulse_values, self.npre-filter_pretrigger_ignore_samples,
                                  noise_psd, sample_time=self.frametime_s, 
                                  noise_autocorr=noise_autocorr,
                                  tau=filter_orthogonal_to_exponential_time_constant_ms)
         filter_obj.compute()
-        filter_obj.report()
+        print("predicted resolutions")
+        filter_obj.report(std_energy=am241_Q_eV)
+        self._filter_obj = filter_obj
         chosen_filter = filter_obj.filt_noexpcon
         self.chosen_filter = chosen_filter
         return chosen_filter
@@ -148,7 +153,7 @@ class NpyAnalyzer():
     def filter(self):
         trig_inds = self.df["trig_ind"]
         filt_value, residual_rms, filt_value_template = npyfilter.filter_and_residual_rms(self.data, 
-                self.chosen_filter, self.average_pulse_obj(), trig_inds, self.npre, self.nsamples,
+                self.chosen_filter, self.average_pulse_obj.values(), trig_inds, self.npre, self.nsamples,
                 self.pulse_polarity)
         self.df = self.df.with_columns(filt_value=filt_value, residual_rms=residual_rms, 
                                        filt_value_template=filt_value_template)
@@ -175,6 +180,16 @@ class NpyAnalyzer():
         c[(c==0)&(residual_rms>max_residual_rms)]=6
         self.df = self.df.with_columns(classification=c)
         return classification_meaning
+    
+    def classification_debug_plots(self, class_meaning):
+        classification = self.df["classification"].to_numpy()
+        trig_inds = self.df["trig_ind"].to_numpy()
+        for c, c_meaning in class_meaning.items():
+            inds = np.nonzero(classification==c)[0]
+            c_meaning = class_meaning[c]
+            print(f"{c=} {c_meaning} {len(inds)=}")
+            npyfilter.plot_inds(self.data, self.npre, self.nsamples, trig_inds[inds], label=f"{c_meaning}: {len(inds)} pulses of type {c} (up to 50 shown)", max_pulses_to_plot=50)
+    
 
     def filt_value_to_energy_with_ptmean_correlation_removal(self, median_energy):
         fv_subset, pretrig_mean_subset = self.df.filter(pl.col("classification")==0)[["filt_value", "pretrig_mean"]]
