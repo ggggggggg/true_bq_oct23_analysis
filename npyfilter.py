@@ -20,8 +20,8 @@ def calculate_spikeyness_pretrig_mean_pulse_rms(data, frontload_n_samples, npre,
             spikeyness[i] = max_neg_deriv/peakval
             frontload_pulse_area = np.sum(pulse[npre:npre+frontload_n_samples]-pretrig_mean[i])
             backload_pulse_area = np.sum(pulse[npre+frontload_n_samples:]-pretrig_mean[i])
-            # spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
-            spikeyness[i] = frontload_pulse_area/backload_pulse_area
+            spikeyness[i] = max_neg_deriv/peakval*frontload_pulse_area/pulse_area
+            # spikeyness[i] = frontload_pulse_area/backload_pulse_area
             pretrig_mean[i] *= polarity
         return spikeyness, pretrig_mean, pulse_rms
 
@@ -120,10 +120,11 @@ def onpick(event):
     event_g = event
     print(event_g.artist.get_label())
 
-def plot_inds(data, npre, nsamples, inds, label, max_pulses_to_plot=40):
+def plot_inds(data, npre, nsamples, inds, label, max_pulses_to_plot=40, newfig=True):
     import pylab as plt
     cmap = plt.matplotlib.colormaps.get_cmap("rainbow")
-    plt.figure()
+    if newfig:
+        plt.figure()
     for j, i in enumerate(inds):
         if j >= max_pulses_to_plot:
             break

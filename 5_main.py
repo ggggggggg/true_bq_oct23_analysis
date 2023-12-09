@@ -36,8 +36,6 @@ filter_pretrigger_ignore_samples = 10 # this value to exclude rising samples fro
 
 # pulse classification inputs
 max_residual_rms = 60
-# spikeyness_threshold_foil_plus_non_foil = 7.7e-4
-# spikeyness_threshold_non_foil_only = 17e-3
 spikeyness_threshold_foil_plus_non_foil = 0.0006
 spikeyness_threshold_non_foil_only = 0.006
 frontload_n_samples = 100
@@ -119,6 +117,26 @@ plt.title(f"""Histogram Live Time = {live_time_s:0.2f} s. Total Counts = {total_
 plt.legend()
 plt.yscale("log")
 plt.tight_layout()
+
+def plot_hist_mark_roi(data, df, bin_edges, roi_lo, roi_hi):
+    plt.figure(figsize=(16,6))
+    plt.subplot(121)
+    counts, _ = np.histogram(df["energy_classified"].to_numpy(), bin_edges)
+    roi_plot_inds = (midpoints(bin_edges) > roi_lo) & (midpoints(bin_edges)<roi_hi)
+    plt.plot(midpoints(bin_edges), counts, drawstyle="steps-mid")
+    plt.plot(midpoints(bin_edges)[roi_plot_inds], counts[roi_plot_inds], drawstyle="steps-mid", color="r",
+                     label="plotted pulses ROI")
+    plt.legend()
+    plt.yscale("log")
+    plot_inds = df.filter(pl.col("energy_classified")>roi_lo, pl.col("energy_classified")<roi_hi)["trig_ind"]
+    plt.subplot(122)
+    label=""
+    npyfilter.plot_inds(data, npre, nsamples, plot_inds, label, max_pulses_to_plot=40, newfig=False)
+    plt.gca().get_legend().remove()
+
+plot_hist_mark_roi(analyzer.data, df, bin_edges, roi_lo=0, roi_hi=roi_lo)
+
+
 
 
 
