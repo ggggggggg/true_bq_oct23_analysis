@@ -10,21 +10,23 @@ plt.ion()
 plt.close("all")
 
 
-fname_npy = os.path.join(".","20231003","0002","20231003_run0002_chan3.ljh.npy")
+#trigger params (cached)
+fname_npy = os.path.join("/home/pcuser/data","20231003","0002","20231003_run0002_chan3.ljh.npy")
 polarity = -1 # postive for positive oging pulses, negative for negative going
 trigger_filter = np.array([-1]*10+[+1]*10,dtype=float) * polarity # negate for negative pulses
 trigger_threshold = 200
+truncate_data_to_time_s = 1e5 # for faster triggering use a smaller value
 
+# noise params
 noise_n_dead_samples_after_previous_pulse = 70000
 noise_long_n_samples = 100000
-truncate_data_to_time_s = 1e9 # for faster triggering use a smaller value
 # for full analysis use a ridiculously large value like 1e9
 # script will auto re-use triggering if all other parameters are identical, so you only need
 # to wait once
 
 # inputs
 # pulse selection quantities
-min_time_since_last_s = 0.5
+min_time_since_last_s = 0.2
 min_time_to_next_s = 0.010
 min_time_since_last_s_for_average_pulse = 0.6
 
@@ -135,7 +137,7 @@ def plot_hist_mark_roi(data, df, bin_edges, roi_lo, roi_hi):
     plt.gca().get_legend().remove()
 
 plot_hist_mark_roi(analyzer.data, df, bin_edges, roi_lo=0, roi_hi=roi_lo)
-
+plot_hist_mark_roi(analyzer.data, df, bin_edges, roi_lo=5.675e6, roi_hi=5.850e6)
 
 
 
