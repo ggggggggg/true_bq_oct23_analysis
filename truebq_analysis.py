@@ -68,8 +68,8 @@ class NpyAnalyzer():
         self.nsamples = nsamples
 
     def _trigger_pulses_or_load_from_cache(self, trigger_filter, trigger_threshold, truncate_data_to_time_s):
-        # key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s, self.fname_npy))).encode()).hexdigest()}.npy"
-        key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s))).encode()).hexdigest()}.npy"
+        key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s, self.fname_npy))).encode()).hexdigest()}.npy"
+        # key = f"{hashlib.sha256((str((str(trigger_filter), trigger_threshold, truncate_data_to_time_s))).encode()).hexdigest()}.npy"
         fname = memoize_to_disk_npy.get_fname(key)
         try:
             trig_inds = np.load(fname)
