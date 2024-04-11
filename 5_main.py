@@ -6,16 +6,18 @@ import pickle
 import npyfilter
 import scipy
 import truebq_analysis
+import mass
+import truebqlines
 plt.ion()
 plt.close("all")
 
 
 #trigger params (cached)
-fname_npy = os.path.join("/home/pcuser/data","20231003","0002","20231003_run0002_chan3.ljh.npy")
+fname_npy = os.path.join("/home/pcuser/data","20240314","0000","20240314_run0000_chan3.ljh.npy")
 polarity = -1 # postive for positive oging pulses, negative for negative going
-trigger_filter = np.array([-1]*10+[+1]*10,dtype=float) * polarity # negate for negative pulses
+trigger_filter = np.array([-1]*20+[+1]*20,dtype=float) * polarity # negate for negative pulses
 trigger_threshold = 200
-truncate_data_to_time_s = 1e5 # for faster triggering use a smaller value
+truncate_data_to_time_s = 1e9 # for faster triggering use a smaller value
 
 # noise params
 noise_n_dead_samples_after_previous_pulse = 70000
@@ -135,6 +137,18 @@ def plot_hist_mark_roi(data, df, bin_edges, roi_lo, roi_hi):
     label=""
     npyfilter.plot_inds(data, npre, nsamples, plot_inds, label, max_pulses_to_plot=40, newfig=False)
     plt.gca().get_legend().remove()
+
+def plot_hist_with_fit(analyzer, df, bin_edges=np.arange(-100e3,100e3,1e3)+am241_Q_eV):
+    counts, _ = np.histogram(df["energy_classified"].to_numpy(), bin_edges)
+    model = mass.get_model("Am241Q", has_tails=True)
+    result = model.fit(bin_centers=midpoints(bin_edges), data=counts)
+    result.plotm()
+    filter_choice = analyzer.filter_choice
+    chosen_filter_v_dv = analyzer.chosen_filter_v_dv
+    chosen_filter_predicted_fwhm = am241_Q_eV/chosen_filter_v_dv
+    plt.title(f"{plt.gca().get_title()}\n{filter_choice=} {chosen_filter_predicted_fwhm=:.2f}")
+
+rseult = plot_hist_with_fit(analyzer, df)
 
 plot_hist_mark_roi(analyzer.data, df, bin_edges, roi_lo=0, roi_hi=roi_lo)
 plot_hist_mark_roi(analyzer.data, df, bin_edges, roi_lo=5.675e6, roi_hi=5.850e6)

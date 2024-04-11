@@ -137,7 +137,7 @@ class NpyAnalyzer():
     
     def calculate_filter(self, avg_pulse_values, noise_autocorr, noise_psd,
                          filter_pretrigger_ignore_samples, 
-                         filter_orthogonal_to_exponential_time_constant_ms):
+                         filter_orthogonal_to_exponential_time_constant_ms, filter_choice="noexpcon"):
         filter_obj = mass.ExperimentalFilter(avg_pulse_values, self.npre-filter_pretrigger_ignore_samples,
                                  noise_psd, sample_time=self.frametime_s, 
                                  noise_autocorr=noise_autocorr,
@@ -146,8 +146,10 @@ class NpyAnalyzer():
         print("predicted resolutions")
         filter_obj.report(std_energy=am241_Q_eV)
         self._filter_obj = filter_obj
-        chosen_filter = filter_obj.filt_noexpcon
+        chosen_filter = getattr(filter_obj, f"filt_{filter_choice}")
+        self.chosen_filter_v_dv = filter_obj.v_dv[filter_choice]
         self.chosen_filter = chosen_filter
+        self.filter_choice = filter_choice
         return chosen_filter
     
     def filter(self):
