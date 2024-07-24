@@ -13,7 +13,7 @@ plt.close("all")
 
 
 #trigger params (cached)
-fname_npy = os.path.join("/home/pcuser/data","20240314","0000","20240314_run0000_chan3.ljh.npy")
+fname_npy = r"C:\Users\radgroup\src\data\240722_110250_GDES001 2.7 V\Dev2_ai3\data.bin"
 polarity = -1 # postive for positive oging pulses, negative for negative going
 trigger_filter = np.array([-1]*20+[+1]*20,dtype=float) * polarity # negate for negative pulses
 trigger_threshold = 200
@@ -52,7 +52,7 @@ roi_lo = 5.4e6
 roi_hi = 6.0e6
 
 
-analyzer = truebq_analysis.NpyAnalyzer(fname_npy, polarity, npre, nsamples)
+analyzer = truebq_analysis.BinAnalyzer(fname_npy, polarity, npre, nsamples)
 analyzer.trigger_pulses_or_load_from_cache(trigger_threshold=trigger_threshold, 
                                            trigger_filter=trigger_filter,
                                            truncate_data_to_time_s=truncate_data_to_time_s)

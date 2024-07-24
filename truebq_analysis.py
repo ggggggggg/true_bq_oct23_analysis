@@ -54,6 +54,9 @@ class NpyAveragePulse():
         pulses = npyfilter.gather_pulse_from_inds(self.data, self.npre, self.nsamples, self.inds_used)
         return np.mean(pulses, axis=1)
 
+
+
+
 class NpyAnalyzer():
     def __init__(self, fname_npy, pulse_polarity, npre, nsamples):
         self.fname_npy = fname_npy
@@ -137,7 +140,7 @@ class NpyAnalyzer():
     
     def calculate_filter(self, avg_pulse_values, noise_autocorr, noise_psd,
                          filter_pretrigger_ignore_samples, 
-                         filter_orthogonal_to_exponential_time_constant_ms, filter_choice="noexpcon"):
+                         filter_orthogonal_to_exponential_time_constant_ms, filter_choice="noconst"):
         filter_obj = mass.ExperimentalFilter(avg_pulse_values, self.npre-filter_pretrigger_ignore_samples,
                                  noise_psd, sample_time=self.frametime_s, 
                                  noise_autocorr=noise_autocorr,
@@ -147,7 +150,10 @@ class NpyAnalyzer():
         filter_obj.report(std_energy=am241_Q_eV)
         self._filter_obj = filter_obj
         chosen_filter = getattr(filter_obj, f"filt_{filter_choice}")
-        self.chosen_filter_v_dv = filter_obj.v_dv[filter_choice]
+        try:
+            self.chosen_filter_v_dv = filter_obj.v_dv[filter_choice]
+        except:
+            self.chosen_filter_v_dv = np.nan
         self.chosen_filter = chosen_filter
         self.filter_choice = filter_choice
         return chosen_filter
@@ -192,6 +198,21 @@ class NpyAnalyzer():
             print(f"{c=} {c_meaning} {len(inds)=}")
             npyfilter.plot_inds(self.data, self.npre, self.nsamples, trig_inds[inds], label=f"{c_meaning}: {len(inds)} pulses of type {c} (up to 50 shown)", max_pulses_to_plot=50)
     
+    def classification_debug_plots_ax(self, class_meaning):
+        classification = self.df["classification"].to_numpy()
+        trig_inds = self.df["trig_ind"].to_numpy()
+        fig, axs = plt.subplots(3,3)
+        fig.set_figheight(15)
+        fig.set_figwidth(15)
+        for i, (c, c_meaning) in enumerate(class_meaning.items()):
+            inds = np.nonzero(classification==c)[0]
+            c_meaning = class_meaning[c]
+            print(f"{c=} {c_meaning} {len(inds)=}")
+            plt.sca(axs.flat[i])
+            npyfilter.plot_inds(self.data, self.npre, self.nsamples, trig_inds[inds], 
+            label=f"{c_meaning}: {len(inds)} pulses of type {c} (up to 50 shown)", 
+            max_pulses_to_plot=50, newfig=False)
+
 
     def filt_value_to_energy_with_ptmean_correlation_removal(self, median_energy):
         fv_subset, pretrig_mean_subset = self.df.filter(pl.col("classification")==0)[["filt_value", "pretrig_mean"]]
@@ -206,7 +227,22 @@ class NpyAnalyzer():
         energy_corrected = fv_corrected*median_energy/median_vs_subset
         self.df = self.df.with_columns(energy_uncorrected=energy_uncorrected, energy=energy_corrected)
 
+class BinAnalyzer(NpyAnalyzer):
+    def __init__(self, fname_bin, pulse_polarity, npre, nsamples):
+        self.fname_npy = fname_bin # this more likely to just work elsehwere
+        self.data = np.memmap(fname_bin, dtype=np.int16, mode='r', offset=68)
+        self.header = self.read_header(fname_bin)
+        self.pulse_polarity=pulse_polarity
+        self.npre=npre
+        self.nsamples=nsamples
+        self.df = pl.DataFrame()
+        self.frametime_s=1/self.header["sample_rate_hz"][0]
 
+    def read_header(self, fname_bin):
+        header_dtype = np.dtype([("format", np.uint32), ("schema", np.uint32), ("sample_rate_hz", np.float64), ("data reduction factor", np.int16), ("voltage scale", np.float64), ("aquisition flags", np.uint16), ("start_time", np.uint64, 2), ("stop_time", np.uint64, 2), ("number of samples", np.uint64)])
+        header_np = np.memmap(fname_bin, dtype=header_dtype, mode='r', offset=0, shape=1)
+        header = pl.from_numpy(header_np)
+        return header
         
 
 # analyzer = truebq_analysis.TrueBqNpyAnalyzer(inputs)
